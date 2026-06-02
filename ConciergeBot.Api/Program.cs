@@ -292,6 +292,45 @@ app.MapGet("/health", () => Results.Ok(new
     time = DateTime.UtcNow.ToString("O")
 }));
 
+// ── LLM smoke (v0.1) ──────────────────────────────────────────────────────
+// API-key protected (not /health, not /v1/resources/*). With Llm:Provider=disabled
+// returns a safe disabled response and makes NO network call. With a configured
+// provider + key, runs one live completion. Never returns the API key.
+const int MaxLlmPromptLength = 4_000;
+app.MapPost("/v1/internal/llm-smoke", async (LlmSmokeRequest req, ILlmClient llm, LlmOptions opts, CancellationToken ct) =>
+{
+    var prompt = req.Prompt ?? string.Empty;
+    if (prompt.Length > MaxLlmPromptLength)
+        return Results.BadRequest(new { error = $"prompt exceeds {MaxLlmPromptLength} character limit" });
+
+    if (!llm.IsEnabled)
+    {
+        // disabled, or a network provider with no key — no network call.
+        return Results.Ok(new LlmSmokeResponse(
+            Provider: llm.ProviderLabel,
+            Model: llm.Model,
+            Ok: false,
+            LatencyMs: 0,
+            TextPreview: null,
+            Error: opts.Provider == LlmProvider.Disabled ? "llm_disabled" : "missing_api_key"));
+    }
+
+    var result = await llm.CompleteAsync(
+        "You are a smoke-test probe. Reply with one short sentence.",
+        string.IsNullOrWhiteSpace(prompt) ? "Reply OK." : prompt,
+        ct);
+
+    static string Preview(string s, int max) => s.Length <= max ? s : s[..max];
+
+    return Results.Ok(new LlmSmokeResponse(
+        Provider: llm.ProviderLabel,
+        Model: llm.Model,
+        Ok: result.Ok,
+        LatencyMs: result.LatencyMs,
+        TextPreview: result.Text is null ? null : Preview(result.Text, 280),
+        Error: result.Error));
+});
+
 const int MaxMessageLength = 10_000;
 
 app.MapPost("/echo", async (EchoRequest req, EchoService svc) =>
