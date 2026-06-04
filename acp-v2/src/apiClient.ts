@@ -23,9 +23,18 @@ export interface CreateSubscriptionResponse {
   pushMode: "webhook" | "inJobStream";
 }
 
+export interface PortfolioRunInput {
+  goal: string;
+  walletAddress: string;
+  budgetUsdc?: number;
+  riskTolerance?: string;
+  chains?: string[];
+}
+
 export interface ApiClient {
   echo(input: { message: string }): Promise<unknown>;
   createSubscription(input: CreateSubscriptionInput): Promise<CreateSubscriptionResponse>;
+  portfolioRun(input: PortfolioRunInput): Promise<unknown>;
 }
 
 export function createApiClient(baseUrl: string, opts: { apiKey?: string } = {}): ApiClient {
@@ -46,6 +55,7 @@ export function createApiClient(baseUrl: string, opts: { apiKey?: string } = {})
 
   return {
     echo(input)              { return post("/echo", input); },
-    createSubscription(input) { return post("/subscriptions", input); }
+    createSubscription(input) { return post("/subscriptions", input); },
+    portfolioRun(input)       { return post("/v1/internal/portfolio-run", input); }
   };
 }

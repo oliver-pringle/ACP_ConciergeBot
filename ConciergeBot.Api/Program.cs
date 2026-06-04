@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using ConciergeBot.Api.Data;
@@ -7,10 +6,14 @@ using ConciergeBot.Api.Models;
 using ConciergeBot.Api.Services;
 using ConciergeBot.Api.Services.Llm;
 using ConciergeBot.Api.Workers;
+using ConciergeBot.Api.Workflows;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// P43: suppress the "Server: Kestrel" banner header on every response.
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
 // Data
 builder.Services.AddSingleton<Db>();
@@ -41,6 +44,50 @@ builder.Services.AddHttpClient<WebhookDeliveryService>()
 // buyer-supplied address — so the SSRF lane doesn't apply. Kept on the
 // default handler.
 builder.Services.AddHttpClient<InJobStreamDeliveryService>();
+
+// ── PortfolioRun workflow (sequential + conditional orchestration) ───────
+// Cross-bot HTTP clients for downstream portfolio bots. Each client uses
+// HttpCompletionOption.ResponseHeadersRead (P4) and logs base URLs with
+// host-only redaction (P9). Missing API keys warn at boot and return
+// "unavailable" at runtime (non-fatal per-executor).
+var portfolioRunConfig = builder.Configuration.GetSection("PortfolioRun");
+builder.Services.AddHttpClient("revokebot", c =>
+{
+    var baseUrl = portfolioRunConfig["RevokeBotBaseUrl"] ?? "http://revokebot-api:5000";
+    c.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    c.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddHttpClient("oraclebot", c =>
+{
+    var baseUrl = portfolioRunConfig["OracleBotBaseUrl"] ?? "http://oraclebot-api:5000";
+    c.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    c.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddHttpClient("securitybot", c =>
+{
+    var baseUrl = portfolioRunConfig["SecurityBotBaseUrl"] ?? "http://securitybot-api:5000";
+    c.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    c.Timeout = TimeSpan.FromSeconds(20);
+});
+builder.Services.AddHttpClient("liquidguard", c =>
+{
+    var baseUrl = portfolioRunConfig["LiquidGuardBaseUrl"] ?? "http://liquidguard-api:5000";
+    c.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    c.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddHttpClient("mevprotect", c =>
+{
+    var baseUrl = portfolioRunConfig["MEVProtectBaseUrl"] ?? "http://mevprotect-api:5000";
+    c.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    c.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddSingleton<WalletScanExecutor>();
+builder.Services.AddSingleton<OracleCheckExecutor>();
+builder.Services.AddSingleton<LiquidGuardExecutor>();
+builder.Services.AddSingleton<MEVProtectExecutor>();
+builder.Services.AddSingleton<SecurityScanExecutor>();
+builder.Services.AddSingleton<PortfolioRunWorkflow>();
+builder.Services.AddSingleton<PortfolioRunService>();
 
 // ── LLM provider (v0.1) ───────────────────────────────────────────────────
 // Optional, flag-gated via the "Llm" config section. Default is disabled =>
@@ -129,6 +176,10 @@ if (bootLlm.Provider != LlmProvider.Disabled && string.IsNullOrEmpty(bootLlm.Api
         "[llm] provider={Provider} is configured but no API key was found (Llm:ApiKey / VIRTUALS_API_KEY). " +
         "LLM narration will fail closed to deterministic route summaries.",
         bootLlm.ProviderLabel);
+
+// portfolio_run boot banner
+app.Logger.LogInformation(
+    "[portfolio_run] workflow pattern=sequential_conditional bots=revoke,oracle,liquidguard,mev,security");
 
 if (app.Environment.IsDevelopment())
 {
@@ -329,6 +380,28 @@ app.MapPost("/v1/internal/llm-smoke", async (LlmSmokeRequest req, ILlmClient llm
         LatencyMs: result.LatencyMs,
         TextPreview: result.Text is null ? null : Preview(result.Text, 280),
         Error: result.Error));
+});
+
+// ── portfolio_run workflow endpoint ───────────────────────────────────────
+// Internal endpoint for the ACP sidecar to call when portfolio_run is hired.
+// Runs a sequential + conditional orchestration across downstream portfolio
+// bots (RevokeBot, OracleBot, LiquidGuard, MEVProtect, SecurityBot) via internal HTTP calls.
+const int MaxGoalLength = 2_000;
+app.MapPost("/v1/internal/portfolio-run", async (PortfolioRunRequest req, PortfolioRunService svc, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Goal))
+        return Results.BadRequest(new { error = "goal is required" });
+    if (req.Goal.Length > MaxGoalLength)
+        return Results.BadRequest(new { error = $"goal exceeds {MaxGoalLength} character limit" });
+    if (string.IsNullOrWhiteSpace(req.WalletAddress))
+        return Results.BadRequest(new { error = "walletAddress is required" });
+    if (req.WalletAddress.Length < 10 || req.WalletAddress.Length > 100)
+        return Results.BadRequest(new { error = "walletAddress must be 10-100 characters" });
+    if (req.Chains is null || req.Chains.Length == 0)
+        return Results.BadRequest(new { error = "chains must contain at least one chain" });
+
+    var result = await svc.RunAsync(req, ct);
+    return Results.Ok(result);
 });
 
 const int MaxMessageLength = 10_000;

@@ -1,7 +1,7 @@
 import type { AssetToken } from "@virtuals-protocol/acp-node-v2";
 import { OFFERINGS } from "./offerings/registry.js";
 
-const DEFAULT_PRICE_USDC = 0.1;
+const DEFAULT_PRICE_USDC = 0.01;
 
 export interface Price {
   amountUsdc: number;
@@ -17,7 +17,11 @@ export function priceFor(offeringName: string, requirement: Record<string, unkno
   }
 
   // One-shot: per-name fixed price table; default if absent.
-  const fixed: Record<string, number> = { echo: 0.1 };
+  const fixed: Record<string, number> = {
+    echo: 0.01,
+    route_stack: 0.05,
+    portfolio_run: 0.35
+  };
   return { amountUsdc: fixed[offeringName] ?? DEFAULT_PRICE_USDC };
 }
 

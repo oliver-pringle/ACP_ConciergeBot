@@ -11,7 +11,7 @@ services:
       # Restrict the Host header allowlist to the docker-compose service name +
       # localhost. If you publish ports or rename the service, update this list
       # (or set AllowedHosts in your shell env before `docker compose up`).
-      - AllowedHosts=conciergebot-api;localhost
+      - AllowedHosts=conciergebot-api;localhost;api.acp-metabot.dev
       # REQUIRED in any non-Development environment — Program.cs fails fast at
       # boot if ASPNETCORE_ENVIRONMENT != "Development" and this env var is
       # empty. Set CONCIERGEBOT_API_KEY in your host shell (or in
@@ -37,7 +37,10 @@ services:
       # Bind-mount must be writable by UID 1654 (the .NET 10 `app` user). One-time
       # setup on a fresh host: `mkdir -p data && sudo chown 1654:1654 data`.
       - ./data:/data
-    networks: [conciergebot]
+    # api joins the internal conciergebot net (sidecar reaches it) PLUS the two
+    # external bridges: acp-shared (cross-bot calls / website probes) and
+    # caddy_proxy (the shared Caddy gateway proxies /conciergebot/* here).
+    networks: [conciergebot, acp-shared, caddy_proxy]
     # No ports published — only the sidecar talks to it.
 
   conciergebot-acp:
@@ -61,3 +64,7 @@ services:
 networks:
   conciergebot:
     driver: bridge
+  acp-shared:
+    external: true
+  caddy_proxy:
+    external: true
