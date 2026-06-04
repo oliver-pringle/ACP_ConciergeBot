@@ -100,7 +100,7 @@ public sealed class MEVProtectExecutor : IWorkflowExecutor<WorkflowContext, MEVP
 
         var mevScore = 100;
         var sandwichEvents = 0;
-        var frontrunEvents = 0;
+        var frontruns = 0;
 
         if (body.TryGetProperty("mevScore", out var ms) && ms.ValueKind == JsonValueKind.Number)
         {
@@ -112,24 +112,31 @@ public sealed class MEVProtectExecutor : IWorkflowExecutor<WorkflowContext, MEVP
             sandwichEvents = se.GetInt32();
         }
 
-        if (body.TryGetProperty("frontrunEvents", out var fe) && fe.ValueKind == JsonValueKind.Number)
+        // MEVProtect emits "frontruns" (not "frontrunEvents") — match the wire field.
+        if (body.TryGetProperty("frontruns", out var fe) && fe.ValueKind == JsonValueKind.Number)
         {
-            frontrunEvents = fe.GetInt32();
+            frontruns = fe.GetInt32();
         }
 
-        if (mevScore < 60)
+        // Band on OBSERVED event counts, not the raw score. MEVProtect's mevScore
+        // is 100 (no sandwiches) down to 75 (>=25% sandwich rate), and 75 is ALSO
+        // the neutral "no data / 0-tx" sentinel — so the score alone can't tell a
+        // clean/unanalysed wallet (0 events) from a heavily-sandwiched one. Event
+        // counts are unambiguous: 0 events = no observed exposure.
+        if (sandwichEvents == 0 && frontruns == 0)
+        {
+            riskLevel = "low";
+            findings.Add("No MEV sandwich or frontrun activity observed (30-day window).");
+        }
+        else if (sandwichEvents >= 3)
         {
             riskLevel = "high";
-            findings.Add($"High MEV exposure: score {mevScore}/100 ({sandwichEvents} sandwich, {frontrunEvents} frontrun events)");
-        }
-        else if (mevScore < 80)
-        {
-            riskLevel = "medium";
-            findings.Add($"MEV exposure detected: score {mevScore}/100 ({sandwichEvents} sandwich events)");
+            findings.Add($"High MEV exposure: {sandwichEvents} sandwich, {frontruns} frontrun event(s) (score {mevScore}/100).");
         }
         else
         {
-            findings.Add($"MEV score: {mevScore}/100 — low exposure");
+            riskLevel = "medium";
+            findings.Add($"MEV exposure detected: {sandwichEvents} sandwich, {frontruns} frontrun event(s) (score {mevScore}/100).");
         }
 
         // Add additional context if present
