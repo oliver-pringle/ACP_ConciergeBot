@@ -84,6 +84,17 @@ public sealed class MEVProtectExecutor : IWorkflowExecutor<WorkflowContext, MEVP
 
     private static (string riskLevel, List<string> findings) ExtractRiskAndFindings(JsonElement body)
     {
+        // MEVProtect's /v1/internal/mev_score is non-blocking: a wallet it hasn't
+        // analysed yet returns pending=true with a neutral placeholder score while
+        // it warms its 12h forensics cache in the background. Surface that honestly
+        // as "unknown / warming" rather than reporting the placeholder as a real
+        // medium-exposure verdict. A follow-up portfolio_run returns the real score.
+        if (body.TryGetProperty("pending", out var pend) && pend.ValueKind == JsonValueKind.True)
+        {
+            return ("unknown",
+                ["MEV exposure analysis is warming up — re-run shortly for the full result."]);
+        }
+
         var findings = new List<string>();
         var riskLevel = "low";
 
