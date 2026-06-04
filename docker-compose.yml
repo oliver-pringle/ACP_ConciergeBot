@@ -36,6 +36,8 @@ services:
       # Cross-bot API keys for portfolio_run executor (read from .env at project root)
       - PortfolioRun__RevokeBotApiKey=${PortfolioRun__RevokeBotApiKey:-}
       - PortfolioRun__OracleBotApiKey=${PortfolioRun__OracleBotApiKey:-}
+      - PortfolioRun__LiquidGuardApiKey=${PortfolioRun__LiquidGuardApiKey:-}
+      - PortfolioRun__MEVProtectApiKey=${PortfolioRun__MEVProtectApiKey:-}
       - PortfolioRun__SecurityBotApiKey=${PortfolioRun__SecurityBotApiKey:-}
     volumes:
       # Bind-mount must be writable by UID 1654 (the .NET 10 `app` user). One-time
