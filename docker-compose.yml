@@ -33,6 +33,10 @@ services:
       # droplet, tighten to the exact Caddy bridge subnet (e.g. 172.23.0.0/24).
       # Defaults to 172.16.0.0/12 + loopback v4/v6 — fine for local Docker.
       - TRUSTED_PROXY_NETWORKS=${TRUSTED_PROXY_NETWORKS:-172.16.0.0/12,127.0.0.0/8,::1/128}
+      # Cross-bot API keys for portfolio_run executor (read from .env at project root)
+      - PortfolioRun__RevokeBotApiKey=${PortfolioRun__RevokeBotApiKey:-}
+      - PortfolioRun__OracleBotApiKey=${PortfolioRun__OracleBotApiKey:-}
+      - PortfolioRun__SecurityBotApiKey=${PortfolioRun__SecurityBotApiKey:-}
     volumes:
       # Bind-mount must be writable by UID 1654 (the .NET 10 `app` user). One-time
       # setup on a fresh host: `mkdir -p data && sudo chown 1654:1654 data`.
