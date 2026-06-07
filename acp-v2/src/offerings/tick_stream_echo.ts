@@ -52,6 +52,7 @@ export const tickStreamEcho: Offering = {
       deliveredAt:    { type: "string",  description: "ISO-8601 UTC stream-close timestamp." },
       streamSummary:  {
         type: "object",
+        description: "Compact summary of the stream subscription (tick budget + start time) at stream-close.",
         properties: {
           ticksPurchased: { type: "integer", description: "Tick budget the buyer paid for." },
           createdAt:      { type: "string",  description: "ISO-8601 UTC subscription start." }

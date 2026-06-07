@@ -1,11 +1,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY ConciergeBot.Api/ConciergeBot.Api.csproj ConciergeBot.Api/
-RUN dotnet restore ConciergeBot.Api/ConciergeBot.Api.csproj
+COPY ConciergeBot.Api.csproj ./
+RUN dotnet restore ConciergeBot.Api.csproj
 
-COPY ConciergeBot.Api/ ConciergeBot.Api/
-RUN dotnet publish ConciergeBot.Api/ConciergeBot.Api.csproj -c Release -o /app /p:UseAppHost=false
+COPY . ./
+RUN dotnet publish ConciergeBot.Api.csproj -c Release -o /app /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

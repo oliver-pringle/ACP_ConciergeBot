@@ -29,7 +29,7 @@ wallets/
 *.db
 *.db-shm
 *.db-wal
-data/
+/data/
 logs/
 
 # OS/editor
