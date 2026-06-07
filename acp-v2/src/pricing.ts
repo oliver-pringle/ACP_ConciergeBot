@@ -1,7 +1,10 @@
 import type { AssetToken } from "@virtuals-protocol/acp-node-v2";
 import { OFFERINGS } from "./offerings/registry.js";
 
-const DEFAULT_PRICE_USDC = 0.01;
+// R18 2026-06-07: was 0.01 (below the $0.02 portfolio floor). Only route_stack +
+// portfolio_run are registered (both in the fixed table below), so this fallback is
+// unreachable in practice; lifted to 0.05 so an unknown name never prices sub-floor.
+const DEFAULT_PRICE_USDC = 0.05;
 
 export interface Price {
   amountUsdc: number;
@@ -18,7 +21,6 @@ export function priceFor(offeringName: string, requirement: Record<string, unkno
 
   // One-shot: per-name fixed price table; default if absent.
   const fixed: Record<string, number> = {
-    echo: 0.01,
     route_stack: 0.05,
     portfolio_run: 0.35
   };

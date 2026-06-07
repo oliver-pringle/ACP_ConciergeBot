@@ -32,7 +32,6 @@ export interface PortfolioRunInput {
 }
 
 export interface ApiClient {
-  echo(input: { message: string }): Promise<unknown>;
   createSubscription(input: CreateSubscriptionInput): Promise<CreateSubscriptionResponse>;
   portfolioRun(input: PortfolioRunInput): Promise<unknown>;
 }
@@ -54,7 +53,6 @@ export function createApiClient(baseUrl: string, opts: { apiKey?: string } = {})
   }
 
   return {
-    echo(input)              { return post("/echo", input); },
     createSubscription(input) { return post("/subscriptions", input); },
     portfolioRun(input)       { return post("/v1/internal/portfolio-run", input); }
   };

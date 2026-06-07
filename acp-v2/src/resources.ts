@@ -26,32 +26,15 @@ export interface Resource {
   description: string;
 }
 
-export const RESOURCES: Record<string, Resource> = {
-  // Sample resource  -  pre-wired with a matching handler in Program.cs and
-  // a backing GetStatusAsync in EchoRepository. Demonstrates the C#-side
-  // pattern (read SQLite, return JSON). Delete or replace when cloning.
-  //
-  // DEFERRED (KnownBugs P9 — audit Low/Medium F10): echoStatus returns an
-  // exact echo COUNT and lastEchoAt timestamp. Anyone reaching the bot can
-  // observe usage volume + recent activity timing — recon value if you don't
-  // want competitors / attackers tracking when your bot is busy. The
-  // boilerplate keeps this as-is because it's a SAMPLE resource and the
-  // information is intentional for demo orchestrators; downstream clones
-  // exposing similar surfaces should consider:
-  //   - rounding the timestamp to the nearest hour
-  //   - removing the count (boolean liveness only)
-  //   - caching a coarse summary on a 60-second interval
-  // See security-audit/SecurityBot/KnownBugs.md#p9 for the canonical fix.
-  echoStatus: {
-    name: "echoStatus",
-    url: "/v1/resources/echoStatus",
-    params: { type: "object", properties: {} },
-    description:
-      "Returns total echoes recorded and the most recent echo timestamp. " +
-      "Free, public, parameterless. Lets buyer agents introspect liveness " +
-      "and basic state without paying for the /echo offering."
-  }
-};
+// R18 (2026-06-07): echoStatus Resource DELETED. It was BasicSubscriptionBot
+// boilerplate cruft — it advertised liveness of the now-deleted /echo demo
+// offering (ConciergeBot ships only route_stack + portfolio_run) and leaked
+// exact usage volume + recency (KnownBugs P9). ConciergeBot is a router and
+// exposes no free Resource in v1. A real route_stack/portfolio_run liveness
+// Resource can be added later if buyer orchestrators want pre-hire introspection.
+// (The C# /v1/resources/echoStatus handler is now unadvertised; remove it +
+// the marketplace Resource registration on a later pass.)
+export const RESOURCES: Record<string, Resource> = {};
 
 export function listResources(): string[] {
   return Object.keys(RESOURCES);
