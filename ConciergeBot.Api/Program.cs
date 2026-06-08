@@ -115,6 +115,7 @@ else
 // Hosted workers
 builder.Services.AddHostedService<TickSchedulerWorker>();
 builder.Services.AddHostedService<RetryWorker>();
+builder.Services.AddHostedService<BackupWorker>(); // P6: daily WAL-aware SQLite backup
 
 builder.Services.AddOpenApi();
 
