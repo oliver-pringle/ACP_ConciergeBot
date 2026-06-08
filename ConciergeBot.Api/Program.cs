@@ -493,14 +493,4 @@ app.MapGet("/subscriptions/{id}", async (string id, HttpContext ctx, Subscriptio
 //
 // Resources stay reachable even when the X-API-Key middleware is on —
 // the middleware above whitelists /v1/resources/* alongside /health.
-app.MapGet("/v1/resources/echoStatus", async (EchoRepository repo) =>
-{
-    var (count, lastAt) = await repo.GetStatusAsync();
-    return Results.Ok(new
-    {
-        count,
-        lastEchoAt = lastAt?.ToString("O")
-    });
-});
-
 app.Run();

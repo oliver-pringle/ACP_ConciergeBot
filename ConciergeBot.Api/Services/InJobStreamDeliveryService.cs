@@ -90,7 +90,7 @@ public class InJobStreamDeliveryService
             req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
             if (!string.IsNullOrEmpty(_apiKey)) req.Headers.Add("X-API-Key", _apiKey);
 
-            using var resp = await _http.SendAsync(req, ct);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             if ((int)resp.StatusCode is >= 200 and < 300)
                 return new DeliveryResult(true, null);
 

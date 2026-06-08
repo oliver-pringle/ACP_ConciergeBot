@@ -34,6 +34,12 @@ public sealed class RateLimitMiddleware
 
     private long _tickCounter;
     private const int EvictEveryNTicks = 256;
+    // P15 hardening: hard cap on the per-X-API-Key bucket dictionary so an
+    // attacker rotating random keys at high RPS can't balloon memory between
+    // eviction sweeps. When the cap is hit, NEW unrecognised keys skip the per-
+    // key reservation (per-IP still throttles). Eviction sweep returns the dict
+    // to nominal once stale buckets pass `2 * window`.
+    private const int ApiKeyBucketHardCap = 8192;
 
     // Path prefixes that count as "heavy" — write paths or compute fan-out.
     // /health and /v1/resources/* are excluded by NOT being listed here.
@@ -84,10 +90,19 @@ public sealed class RateLimitMiddleware
             !string.IsNullOrEmpty(keyHeader.ToString()))
         {
             var keyHash = HashForBucket(keyHeader.ToString());
-            if (!TryReserve(_apiKeyBuckets, keyHash, _apiKeyCapacity))
+            // P15 hardening: when the dictionary is full (memory-growth attack
+            // via random-key rotation), skip the per-key reservation for new
+            // keys — existing key buckets still throttle, and the per-IP bucket
+            // below still bounds anonymous floods.
+            var atCap = _apiKeyBuckets.Count >= ApiKeyBucketHardCap;
+            var isExisting = _apiKeyBuckets.ContainsKey(keyHash);
+            if (!atCap || isExisting)
             {
-                await Write429(ctx, $"rate limit exceeded; {_apiKeyCapacity} req/min per X-API-Key on heavy endpoints");
-                return;
+                if (!TryReserve(_apiKeyBuckets, keyHash, _apiKeyCapacity))
+                {
+                    await Write429(ctx, $"rate limit exceeded; {_apiKeyCapacity} req/min per X-API-Key on heavy endpoints");
+                    return;
+                }
             }
         }
 

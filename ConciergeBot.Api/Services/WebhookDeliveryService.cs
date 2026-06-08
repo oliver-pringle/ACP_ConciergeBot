@@ -90,7 +90,7 @@ public class WebhookDeliveryService
             req.Headers.Add("X-Subscription-Timestamp", ts.ToString());
             req.Headers.Add("X-Subscription-Signature", sig);
 
-            using var resp = await _http.SendAsync(req, ct);
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
             if ((int)resp.StatusCode is >= 200 and < 300)
                 return new DeliveryResult(true, null);
 
