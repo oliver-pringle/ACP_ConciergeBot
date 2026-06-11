@@ -25,6 +25,14 @@ namespace ConciergeBot.Api.Middleware;
 public sealed class RateLimitMiddleware
 {
     private readonly RequestDelegate _next;
+
+    // /health per-IP burst shedding (audit P15/P19): a passive scanner's bounded
+    // burst on the unauthenticated liveness endpoint trips a 429 (loopback exempt;
+    // nothing internal polls /health on this bot). Self-contained: independent of the
+    // heavy per-IP bucket above so it works regardless of that limiter's shape.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime WindowStart, int Count)> _healthBuckets = new();
+    private const int HealthBurstCap = 3;
+    private static readonly TimeSpan HealthBurstWindow = TimeSpan.FromSeconds(10);
     private readonly int             _apiKeyCapacity;
     private readonly int             _ipCapacity;
     private readonly TimeSpan        _window;
@@ -77,6 +85,31 @@ public sealed class RateLimitMiddleware
     public async Task InvokeAsync(HttpContext ctx)
     {
         var path = ctx.Request.Path.Value ?? "";
+
+        // /health burst shedding (P15/P19): loopback (internal probes) exempt; the 429
+        // carries the every-response security headers since it short-circuits before
+        // the later security-headers middleware would run.
+        if (string.Equals(path, "/health", StringComparison.OrdinalIgnoreCase)
+            && ctx.Connection.RemoteIpAddress is { } hrip && !System.Net.IPAddress.IsLoopback(hrip))
+        {
+            var hnow = DateTime.UtcNow;
+            var hb = _healthBuckets.AddOrUpdate(hrip.ToString(),
+                _ => (hnow, 1),
+                (_, b) => hnow - b.WindowStart > HealthBurstWindow ? (hnow, 1) : (b.WindowStart, b.Count + 1));
+            if (hb.Count > HealthBurstCap)
+            {
+                if (_healthBuckets.Count > 1024)
+                    foreach (var kv in _healthBuckets)
+                        if (hnow - kv.Value.WindowStart > HealthBurstWindow) _healthBuckets.TryRemove(kv.Key, out _);
+                ctx.Response.StatusCode = 429;
+                ctx.Response.Headers["Retry-After"]             = "10";
+                ctx.Response.Headers["X-Content-Type-Options"]  = "nosniff";
+                ctx.Response.Headers["X-Frame-Options"]         = "DENY";
+                ctx.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
+                await ctx.Response.WriteAsJsonAsync(new { error = "rate limit exceeded on /health" });
+                return;
+            }
+        }
 
         if (!IsHeavyPath(path))
         {
