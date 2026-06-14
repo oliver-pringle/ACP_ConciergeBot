@@ -1,10 +1,12 @@
 import type { Offering } from "./types.js";
 import { routeStack } from "./route_stack.js";
 import { portfolioRun } from "./portfolio_run.js";
+import { stackExecute } from "./stack_execute.js";
 
 export const OFFERINGS: Record<string, Offering> = {
   route_stack: routeStack,
-  portfolio_run: portfolioRun
+  portfolio_run: portfolioRun,
+  stack_execute: stackExecute
 };
 
 export function getOffering(name: string): Offering | undefined {

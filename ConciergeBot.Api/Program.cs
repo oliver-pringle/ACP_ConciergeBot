@@ -88,6 +88,7 @@ builder.Services.AddSingleton<MEVProtectExecutor>();
 builder.Services.AddSingleton<SecurityScanExecutor>();
 builder.Services.AddSingleton<PortfolioRunWorkflow>();
 builder.Services.AddSingleton<PortfolioRunService>();
+builder.Services.AddSingleton<StackExecutionService>();
 
 // ── LLM provider (v0.1) ───────────────────────────────────────────────────
 // Optional, flag-gated via the "Llm" config section. Default is disabled =>
@@ -402,6 +403,31 @@ app.MapPost("/v1/internal/portfolio-run", async (PortfolioRunRequest req, Portfo
         return Results.BadRequest(new { error = "chains must contain at least one chain" });
 
     var result = await svc.RunAsync(req, ct);
+    return Results.Ok(result);
+});
+
+// ── stack_execute workflow endpoint ───────────────────────────────────────
+// Internal endpoint for the ACP sidecar to call when stack_execute is hired.
+// Executes a recommended stack from route_stack by fanning out real hires
+// to downstream portfolio bots via internal HTTP calls.
+app.MapPost("/v1/internal/stack-execute", async (StackExecutionRequest req, StackExecutionService svc, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Goal))
+        return Results.BadRequest(new { error = "goal is required" });
+    if (req.Goal.Length > MaxGoalLength)
+        return Results.BadRequest(new { error = $"goal exceeds {MaxGoalLength} character limit" });
+    if (string.IsNullOrWhiteSpace(req.WalletAddress))
+        return Results.BadRequest(new { error = "walletAddress is required" });
+    if (req.WalletAddress.Length < 10 || req.WalletAddress.Length > 100)
+        return Results.BadRequest(new { error = "walletAddress must be 10-100 characters" });
+    if (req.Chains is null || req.Chains.Length == 0)
+        return Results.BadRequest(new { error = "chains must contain at least one chain" });
+    if (req.RecommendedStack is null || req.RecommendedStack.Length == 0)
+        return Results.BadRequest(new { error = "recommendedStack must contain at least one recommendation" });
+    if (req.RecommendedStack.Length > 20)
+        return Results.BadRequest(new { error = "recommendedStack exceeds 20 item limit" });
+
+    var result = await svc.ExecuteAsync(req, ct);
     return Results.Ok(result);
 });
 

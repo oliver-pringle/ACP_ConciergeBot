@@ -30,7 +30,8 @@ assert.match(badBudget.reason ?? "", /budgetUsdc/i);
 const result = await route("route_stack", validRequirement, {
   client: {
     async createSubscription() { throw new Error("route_stack should not create subscriptions"); },
-    async portfolioRun() { throw new Error("route_stack should not call portfolioRun API"); }
+    async portfolioRun() { throw new Error("route_stack should not call portfolioRun API"); },
+    async stackExecute() { throw new Error("route_stack should not call stackExecute API"); }
   }
 });
 

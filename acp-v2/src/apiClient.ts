@@ -31,9 +31,23 @@ export interface PortfolioRunInput {
   chains?: string[];
 }
 
+export interface StackExecuteInput {
+  goal: string;
+  recommendedStack: Array<{
+    agent: string;
+    offering: string;
+    reason?: string;
+    requirementHint?: Record<string, unknown>;
+  }>;
+  walletAddress: string;
+  chains: string[];
+  riskTolerance?: string;
+}
+
 export interface ApiClient {
   createSubscription(input: CreateSubscriptionInput): Promise<CreateSubscriptionResponse>;
   portfolioRun(input: PortfolioRunInput): Promise<unknown>;
+  stackExecute(input: StackExecuteInput): Promise<unknown>;
 }
 
 export function createApiClient(baseUrl: string, opts: { apiKey?: string } = {}): ApiClient {
@@ -54,6 +68,7 @@ export function createApiClient(baseUrl: string, opts: { apiKey?: string } = {})
 
   return {
     createSubscription(input) { return post("/subscriptions", input); },
-    portfolioRun(input)       { return post("/v1/internal/portfolio-run", input); }
+    portfolioRun(input)       { return post("/v1/internal/portfolio-run", input); },
+    stackExecute(input)       { return post("/v1/internal/stack-execute", input); }
   };
 }

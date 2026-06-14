@@ -22,7 +22,8 @@ export function priceFor(offeringName: string, requirement: Record<string, unkno
   // One-shot: per-name fixed price table; default if absent.
   const fixed: Record<string, number> = {
     route_stack: 0.05,
-    portfolio_run: 0.35
+    portfolio_run: 0.35,
+    stack_execute: 0.25
   };
   return { amountUsdc: fixed[offeringName] ?? DEFAULT_PRICE_USDC };
 }
