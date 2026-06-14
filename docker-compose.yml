@@ -39,6 +39,7 @@ services:
       - PortfolioRun__LiquidGuardApiKey=${PortfolioRun__LiquidGuardApiKey:-}
       - PortfolioRun__MEVProtectApiKey=${PortfolioRun__MEVProtectApiKey:-}
       - PortfolioRun__SecurityBotApiKey=${PortfolioRun__SecurityBotApiKey:-}
+      - PortfolioRun__SafeRouteBotApiKey=${PortfolioRun__SafeRouteBotApiKey:-}
     volumes:
       # Bind-mount must be writable by UID 1654 (the .NET 10 `app` user). One-time
       # setup on a fresh host: `mkdir -p data && sudo chown 1654:1654 data`.
