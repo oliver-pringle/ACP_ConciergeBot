@@ -81,6 +81,14 @@ builder.Services.AddHttpClient("mevprotect", c =>
     c.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
     c.Timeout = TimeSpan.FromSeconds(15);
 });
+// SafeRouteBot — pre-swap safety leg for stack_execute (Round 19 P2). Calls the
+// gated /v1/safe_quote over acp-shared; key via PortfolioRun:SafeRouteBotApiKey.
+builder.Services.AddHttpClient("saferoutebot", c =>
+{
+    var baseUrl = portfolioRunConfig["SafeRouteBotBaseUrl"] ?? "http://saferoutebot-api:5000";
+    c.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    c.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddSingleton<WalletScanExecutor>();
 builder.Services.AddSingleton<OracleCheckExecutor>();
 builder.Services.AddSingleton<LiquidGuardExecutor>();

@@ -8,7 +8,7 @@ const RISK_TOLERANCES = ["low", "medium", "high"] as const;
 export const stackExecute: Offering = {
   name: "stack_execute",
   description:
-    "Execute a recommended bot/offering stack from route_stack. ConciergeBot fans out real internal hires to downstream portfolio bots (RevokeBot, OracleBot, LiquidGuard, MEVProtect, SecurityBot) and returns per-hire results with cost breakdown. Bots without internal endpoints are flagged for manual hire.",
+    "Execute a recommended bot/offering stack from route_stack. ConciergeBot fans out real internal hires to downstream portfolio bots (RevokeBot, OracleBot, LiquidGuard, MEVProtect, SecurityBot, SafeRouteBot) and returns per-hire results with cost breakdown. Bots without internal endpoints are flagged for manual hire.",
   slaMinutes: 10,
   requirementSchema: {
     type: "object",

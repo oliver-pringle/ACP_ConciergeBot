@@ -15,7 +15,8 @@ public sealed class StackExecutionService
         "TheOracleBot",
         "TheSecurityBot",
         "TheLiquidGuard",
-        "TheMEVProtectBot"
+        "TheMEVProtectBot",
+        "TheSafeRouteBot"
     };
 
     private static readonly Dictionary<string, string> BotToHttpClient = new(StringComparer.OrdinalIgnoreCase)
@@ -24,7 +25,8 @@ public sealed class StackExecutionService
         ["TheOracleBot"] = "oraclebot",
         ["TheSecurityBot"] = "securitybot",
         ["TheLiquidGuard"] = "liquidguard",
-        ["TheMEVProtectBot"] = "mevprotect"
+        ["TheMEVProtectBot"] = "mevprotect",
+        ["TheSafeRouteBot"] = "saferoutebot"
     };
 
     public StackExecutionService(
@@ -109,6 +111,7 @@ public sealed class StackExecutionService
             "thesecuritybot" => await ExecuteSecurityBotAsync(rec, ct),
             "theliquidguard" => await ExecuteLiquidGuardAsync(rec, walletAddress, chain, ct),
             "themevprotectbot" => await ExecuteMEVProtectAsync(rec, walletAddress, ct),
+            "thesaferoutebot" => await ExecuteSafeRouteAsync(rec, walletAddress, ct),
             _ => new ExecutedHire(rec.Agent, rec.Offering, "skipped", 0m, null)
         };
     }
@@ -353,6 +356,63 @@ public sealed class StackExecutionService
         catch (HttpRequestException ex)
         {
             _log.LogWarning(ex, "[stack_execute] MEVProtect {Offering} failed", rec.Offering);
+            return new ExecutedHire(rec.Agent, rec.Offering, "unavailable", 0m, null);
+        }
+    }
+
+    // Round 19 P2 — the pre-swap safety leg. Unlike the wallet-keyed bots above,
+    // SafeRoute is swap-keyed: sellToken/buyToken/amountIn come from the rec's
+    // requirementHint and buyer = the stack's walletAddress (the route recipient).
+    // It calls SafeRoute's gated /v1/safe_quote (no /v1/internal lane — the paid
+    // endpoint IS the X-API-Key-gated surface). Verdict CAUTION/BLOCK is the gate.
+    private async Task<ExecutedHire> ExecuteSafeRouteAsync(
+        StackRecommendation rec,
+        string walletAddress,
+        CancellationToken ct)
+    {
+        var apiKey = GetApiKey("SafeRouteBotApiKey", "SAFEROUTEBOT_INTERNAL_KEY");
+        if (string.IsNullOrEmpty(apiKey))
+            return new ExecutedHire(rec.Agent, rec.Offering, "unavailable - no API key", 0m, null);
+
+        var sellToken = rec.RequirementHint?.GetValueOrDefault("sellToken")?.ToString();
+        var buyToken  = rec.RequirementHint?.GetValueOrDefault("buyToken")?.ToString();
+        var amountIn  = rec.RequirementHint?.GetValueOrDefault("amountIn")?.ToString();
+        if (string.IsNullOrEmpty(sellToken) || string.IsNullOrEmpty(buyToken) || string.IsNullOrEmpty(amountIn))
+            return new ExecutedHire(rec.Agent, rec.Offering,
+                "skipped - no sellToken/buyToken/amountIn in requirementHint", 0m, null);
+
+        try
+        {
+            var http = _httpFactory.CreateClient("saferoutebot");
+            var requestBody = new { sellToken, buyToken, amountIn, buyer = walletAddress };
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, "v1/safe_quote");
+            request.Headers.Add("X-API-Key", apiKey);
+            request.Headers.Add("X-Caller", "conciergebot-stack-execute");
+            request.Content = JsonContent.Create(requestBody);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(20));
+
+            using var resp = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                _log.LogWarning("[stack_execute] SafeRoute {Offering} returned {Status}", rec.Offering, resp.StatusCode);
+                return new ExecutedHire(rec.Agent, rec.Offering, $"error - HTTP {(int)resp.StatusCode}", 0m, null);
+            }
+
+            var body = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
+            return new ExecutedHire(rec.Agent, rec.Offering, "ok", 0.05m, body);
+        }
+        catch (OperationCanceledException)
+        {
+            _log.LogWarning("[stack_execute] SafeRoute {Offering} timed out", rec.Offering);
+            return new ExecutedHire(rec.Agent, rec.Offering, "timeout", 0m, null);
+        }
+        catch (HttpRequestException ex)
+        {
+            _log.LogWarning(ex, "[stack_execute] SafeRoute {Offering} failed", rec.Offering);
             return new ExecutedHire(rec.Agent, rec.Offering, "unavailable", 0m, null);
         }
     }

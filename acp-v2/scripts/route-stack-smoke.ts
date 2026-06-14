@@ -50,4 +50,22 @@ assert.ok(payload.totalEstimatedCostUsdc <= validRequirement.budgetUsdc);
 assert.ok(Array.isArray(payload.hireOrder));
 assert.ok(payload.nextStep.includes("Hire"));
 
-console.log(JSON.stringify({ ok: true, offering: "route_stack", recommendations: payload.recommendedStack.length, totalEstimatedCostUsdc: payload.totalEstimatedCostUsdc }, null, 2));
+// Round 19 P2: a swap-safety goal must recommend SafeRoute's safe_quote.
+const swapResult = await route("route_stack", {
+  goal: "Is it safe to swap into this token on Base? check for honeypot / sell tax before I buy",
+  chains: ["base"]
+}, {
+  client: {
+    async createSubscription() { throw new Error("route_stack should not create subscriptions"); },
+    async portfolioRun() { throw new Error("route_stack should not call portfolioRun API"); },
+    async stackExecute() { throw new Error("route_stack should not call stackExecute API"); }
+  }
+});
+assert.equal(swapResult.ok, true);
+const swapPayload = swapResult.result as any;
+assert.ok(
+  swapPayload.recommendedStack.some((x: any) => x.agent === "TheSafeRouteBot" && x.offering === "safe_quote"),
+  "swap-safety goal should recommend TheSafeRouteBot safe_quote"
+);
+
+console.log(JSON.stringify({ ok: true, offering: "route_stack", recommendations: payload.recommendedStack.length, totalEstimatedCostUsdc: payload.totalEstimatedCostUsdc, swapRecommendsSafeRoute: true }, null, 2));

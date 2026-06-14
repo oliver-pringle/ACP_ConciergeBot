@@ -80,11 +80,24 @@ const CANDIDATES: Candidate[] = [
     offering: "mev_score",
     reason: "Estimate MEV/sandwich exposure before submitting an Ethereum transaction.",
     estimatedCostUsdc: 0.10,
-    keywords: ["mev", "sandwich", "private mempool", "transaction", "swap", "flashbots"],
+    keywords: ["mev", "sandwich", "private mempool", "transaction", "flashbots"],
     knownHires: 0,
     requirementHint: {
       transaction: "0x... signed or planned transaction ...",
       chain: "ethereum"
+    }
+  },
+  {
+    agent: "TheSafeRouteBot",
+    offering: "safe_quote",
+    reason: "Pre-trade safety on a Base swap: honeypot / sell-tax / blacklist simulation + oracle/price-sanity. Returns GO/CAUTION/BLOCK plus an unsigned, ready-to-sign route (withheld on BLOCK). Non-custodial.",
+    estimatedCostUsdc: 0.05,
+    keywords: ["swap", "trade", "honeypot", "rug", "rugpull", "rug pull", "scam token", "token safety", "sell tax", "fee on transfer", "pre-trade", "safe route", "safe swap", "buy token", "dex"],
+    knownHires: 2,
+    requirementHint: {
+      sellToken: "0x... token you are selling (Base) ...",
+      buyToken: "0x... token you want to receive (Base) ...",
+      amountIn: "sellToken amount in base units (e.g. 1 USDC = '1000000')"
     }
   },
   {
