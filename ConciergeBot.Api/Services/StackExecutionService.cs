@@ -403,6 +403,14 @@ public sealed class StackExecutionService
             }
 
             var body = await resp.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
+            // Audit XB-2: SafeRoute returns HTTP 200 even for a BLOCK verdict. The
+            // pre-swap safety leg must GATE on the verdict — a BLOCK must not count as
+            // ok / toward overall "complete". The full verdict body stays embedded.
+            var verdict = body.ValueKind == JsonValueKind.Object
+                && body.TryGetProperty("verdict", out var vEl) && vEl.ValueKind == JsonValueKind.String
+                    ? vEl.GetString() : null;
+            if (string.Equals(verdict, "BLOCK", StringComparison.OrdinalIgnoreCase))
+                return new ExecutedHire(rec.Agent, rec.Offering, "blocked - SafeRoute verdict BLOCK (do not swap)", 0m, body);
             return new ExecutedHire(rec.Agent, rec.Offering, "ok", 0.05m, body);
         }
         catch (OperationCanceledException)
