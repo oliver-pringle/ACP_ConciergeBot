@@ -7,21 +7,21 @@ const RISK_TOLERANCES = ["low", "medium", "high"] as const;
 
 type RiskTolerance = typeof RISK_TOLERANCES[number];
 
-type Traction = "proven" | "unproven" | "unknown";
-
 type StackRecommendation = {
   agent: string;
   offering: string;
   reason: string;
   estimatedCostUsdc: number;
   requirementHint: Record<string, unknown>;
-  traction: Traction;
 };
 
-type Candidate = Omit<StackRecommendation, "traction"> & {
+type Candidate = StackRecommendation & {
   keywords: string[];
+  // Curated preflight pick — surfaced as the default stack when no goal
+  // keyword matches, and ordered ahead of niche picks. This is a capability
+  // signal we control, NOT marketplace hire history (the marketplace has ~2
+  // organic completions ever, so any baked "hire count" would be fabricated).
   defaultPick?: boolean;
-  knownHires: number;
 };
 
 const CANDIDATES: Candidate[] = [
@@ -32,7 +32,6 @@ const CANDIDATES: Candidate[] = [
     estimatedCostUsdc: 0.20,
     keywords: ["approval", "approvals", "revoke", "spender", "allowance", "permit2", "wallet risk", "wallet"],
     defaultPick: true,
-    knownHires: 2,
     requirementHint: {
       walletAddress: "0x... buyer wallet to scan ...",
       chains: ["base", "ethereum"]
@@ -45,7 +44,6 @@ const CANDIDATES: Candidate[] = [
     estimatedCostUsdc: 0.05,
     keywords: ["oracle", "price", "peg", "depeg", "feed", "twap", "pyth", "chainlink"],
     defaultPick: true,
-    knownHires: 1,
     requirementHint: {
       asset: "TOKEN/USDC or pool address",
       chain: "base"
@@ -57,7 +55,6 @@ const CANDIDATES: Candidate[] = [
     reason: "Run a passive security check for externally observable ACP/API issues.",
     estimatedCostUsdc: 0.20,
     keywords: ["security", "audit", "scan", "vulnerability", "webhook", "api", "risk"],
-    knownHires: 1,
     requirementHint: {
       targetUrl: "https://... public bot or API endpoint ..."
     }
@@ -68,7 +65,6 @@ const CANDIDATES: Candidate[] = [
     reason: "Check lending health factor and liquidation distance for DeFi positions.",
     estimatedCostUsdc: 0.05,
     keywords: ["aave", "compound", "morpho", "health factor", "liquidation", "borrow", "collateral", "defi position"],
-    knownHires: 0,
     requirementHint: {
       walletAddress: "0x... position owner ...",
       protocol: "aave-v3",
@@ -81,7 +77,6 @@ const CANDIDATES: Candidate[] = [
     reason: "Estimate MEV/sandwich exposure before submitting an Ethereum transaction.",
     estimatedCostUsdc: 0.10,
     keywords: ["mev", "sandwich", "private mempool", "transaction", "flashbots"],
-    knownHires: 0,
     requirementHint: {
       transaction: "0x... signed or planned transaction ...",
       chain: "ethereum"
@@ -93,7 +88,6 @@ const CANDIDATES: Candidate[] = [
     reason: "Pre-trade safety on a Base swap: honeypot / sell-tax / blacklist simulation + oracle/price-sanity. Returns GO/CAUTION/BLOCK plus an unsigned, ready-to-sign route (withheld on BLOCK). Non-custodial.",
     estimatedCostUsdc: 0.05,
     keywords: ["swap", "trade", "honeypot", "rug", "rugpull", "rug pull", "scam token", "token safety", "sell tax", "fee on transfer", "pre-trade", "safe route", "safe swap", "buy token", "dex"],
-    knownHires: 2,
     requirementHint: {
       sellToken: "0x... token you are selling (Base) ...",
       buyToken: "0x... token you want to receive (Base) ...",
@@ -106,7 +100,6 @@ const CANDIDATES: Candidate[] = [
     reason: "Publish a low-cost attestation for a completed check or route decision.",
     estimatedCostUsdc: 0.05,
     keywords: ["attest", "attestation", "proof", "eas", "reputation", "verify"],
-    knownHires: 1,
     requirementHint: {
       subject: "0x... address or result id ...",
       result: "summary to attest"
@@ -179,14 +172,9 @@ export const routeStack: Offering = {
               type: "object",
               description: "Draft requirement fields the buyer can adapt for this downstream hire.",
               additionalProperties: { description: "A draft requirement value for the downstream offering." }
-            },
-            traction: {
-              type: "string",
-              description: "Whether this offering has observable hire history on the Virtuals marketplace.",
-              enum: ["proven", "unproven", "unknown"]
             }
           },
-          required: ["agent", "offering", "reason", "estimatedCostUsdc", "requirementHint", "traction"]
+          required: ["agent", "offering", "reason", "estimatedCostUsdc", "requirementHint"]
         }
       },
       totalEstimatedCostUsdc: { type: "number", description: "Estimated total downstream spend for the recommended stack, excluding this ConciergeBot route fee." },
@@ -214,16 +202,14 @@ export const routeStack: Offering = {
         offering: "wallet_scan",
         reason: "Find risky token approvals and spender exposure before the buyer moves more funds.",
         estimatedCostUsdc: 0.20,
-        requirementHint: { walletAddress: "0x... buyer wallet to scan ...", chains: ["base", "ethereum"] },
-        traction: "proven"
+        requirementHint: { walletAddress: "0x... buyer wallet to scan ...", chains: ["base", "ethereum"] }
       },
       {
         agent: "TheOracleBot",
         offering: "oracle_check",
         reason: "Compare price sources and flag oracle or peg/depeg risk before acting.",
         estimatedCostUsdc: 0.05,
-        requirementHint: { asset: "TOKEN/USDC or pool address", chain: "base" },
-        traction: "proven"
+        requirementHint: { asset: "TOKEN/USDC or pool address", chain: "base" }
       }
     ],
     totalEstimatedCostUsdc: 0.25,
@@ -277,8 +263,7 @@ function routeStackForRequirement(req: Record<string, unknown>) {
 
   const stack = applyBudget(base, budgetUsdc, riskTolerance);
   const total = roundUsdc(stack.reduce((sum, item) => sum + item.estimatedCostUsdc, 0));
-  const hasUnproven = stack.some(c => c.knownHires === 0);
-  const risks = buildRisks({ budgetUsdc, total, chains, matchedCount: matched.length, riskTolerance, hasUnproven });
+  const risks = buildRisks({ budgetUsdc, total, chains, matchedCount: matched.length, riskTolerance });
 
   return {
     goal,
@@ -303,9 +288,12 @@ function parseChains(value: unknown): string[] {
 }
 
 function applyBudget(candidates: Candidate[], budgetUsdc: number | undefined, riskTolerance: RiskTolerance): Candidate[] {
-  const proven = candidates.filter(c => c.knownHires > 0);
-  const unproven = candidates.filter(c => c.knownHires === 0);
-  const sorted = [...proven, ...unproven];
+  // Order curated preflight picks first, then niche picks, preserving the
+  // declaration order within each group. This is a capability-driven ordering
+  // (defaultPick is a signal we control) — NOT marketplace hire history.
+  const preferred = candidates.filter(c => c.defaultPick);
+  const rest = candidates.filter(c => !c.defaultPick);
+  const sorted = [...preferred, ...rest];
 
   const ordered = riskTolerance === "low"
     ? sorted
@@ -333,7 +321,6 @@ function buildRisks(input: {
   chains: string[];
   matchedCount: number;
   riskTolerance: RiskTolerance;
-  hasUnproven: boolean;
 }): string[] {
   const risks: string[] = [];
   if (input.matchedCount === 0) {
@@ -348,9 +335,6 @@ function buildRisks(input: {
   if (input.riskTolerance === "high") {
     risks.push("High risk tolerance selected; route may omit conservative preflight checks to save cost.");
   }
-  if (input.hasUnproven) {
-    risks.push("One or more recommended offerings have no observable hire history on the Virtuals marketplace — their reliability is unproven.");
-  }
   return risks;
 }
 
@@ -360,20 +344,13 @@ function buildNextStep(stack: Candidate[]): string {
   return `Hire ${first.agent} ${first.offering} first, then use its result to decide whether to continue the route.`;
 }
 
-function getTraction(candidate: Candidate): Traction {
-  if (candidate.knownHires > 0) return "proven";
-  if (candidate.knownHires === 0) return "unproven";
-  return "unknown";
-}
-
 function stripCandidateFields(candidate: Candidate): StackRecommendation {
   return {
     agent: candidate.agent,
     offering: candidate.offering,
     reason: candidate.reason,
     estimatedCostUsdc: candidate.estimatedCostUsdc,
-    requirementHint: candidate.requirementHint,
-    traction: getTraction(candidate)
+    requirementHint: candidate.requirementHint
   };
 }
 
