@@ -1,6 +1,7 @@
 using ConciergeBot.Api.Data;
 using ConciergeBot.Api.Models;
 using ConciergeBot.Api.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Xunit;
 
@@ -81,5 +82,34 @@ public class SubscriptionLimitTests
 
         for (int i = 0; i < 12; i++)
             await svc.CreateAsync(Req($"job-{i}", "0xbuyerA")); // > default per-buyer 10, but 0 = unlimited
+    }
+
+    // Audit (2026-07 #4): the quota is enforced atomically inside
+    // InsertWithQuotaAsync (one BEGIN IMMEDIATE txn per create), so a burst of
+    // concurrent creates can never drive the active count past the cap. The old
+    // check-then-insert in SubscriptionService was a TOCTOU that could exceed it
+    // under exactly this race. We assert the upper-bound invariant (robust: it
+    // holds regardless of how write-lock contention distributes successes).
+    [Fact]
+    public async Task Concurrent_creates_never_exceed_global_cap()
+    {
+        await using var t = TestDb.New();
+        await t.Db.InitializeSchemaAsync();
+        const int cap = 10;
+        var svc = MakeSvc(t, new() { ["Subscriptions:MaxActiveGlobal"] = cap.ToString(), ["Subscriptions:MaxActivePerBuyer"] = "0" });
+
+        // Fire 4x the cap concurrently, each a distinct buyer/job.
+        var tasks = Enumerable.Range(0, cap * 4).Select(async i =>
+        {
+            try { await svc.CreateAsync(Req($"job-c-{i}", $"0xbuyer{i}")); return true; }
+            catch (SubscriptionLimitException) { return false; }  // capped -- expected
+            catch (SqliteException)             { return false; }  // write-lock contention -- treat as not-created
+        });
+        var results = await Task.WhenAll(tasks);
+
+        var active = await new SubscriptionRepository(t.Db).CountActiveAsync();
+        Assert.True(active <= cap, $"active {active} exceeded cap {cap} under concurrency (TOCTOU regression)");
+        Assert.True(active >= 1, "expected at least one concurrent create to succeed");
+        Assert.True(results.Count(ok => ok) <= cap, "more creates reported success than the cap allows");
     }
 }

@@ -111,17 +111,13 @@ public class SubscriptionService
         if (!KnownSubscriptionOfferings.Contains(req.OfferingName))
             throw new InvalidOperationException($"unknown offering: {req.OfferingName}");
 
-        // Audit (2026-05-30 #M3 / P60): enforce the active-subscription quota BEFORE
-        // the insert (P50 spirit — fail before first write). Typed exception so the
-        // route maps it to 429 (back-pressure), distinct from the 400 validation
-        // lane. No raw count is echoed (P30/P11). Checked under the single-instance
-        // model (one process, WAL, busy_timeout); a scale-out clone would move this
-        // to a transactional INSERT...SELECT WHERE (COUNT) < cap.
-        if (_maxActiveGlobal > 0 && await _subs.CountActiveAsync() >= _maxActiveGlobal)
-            throw new SubscriptionLimitException("global active-subscription limit reached");
-        if (_maxActivePerBuyer > 0 && !string.IsNullOrEmpty(req.BuyerAgent)
-            && await _subs.CountActiveByBuyerAsync(req.BuyerAgent) >= _maxActivePerBuyer)
-            throw new SubscriptionLimitException("per-buyer active-subscription limit reached");
+        // Audit (2026-05-30 #M3 / P60; 2026-07 #4): the active-subscription quota
+        // (global + per-buyer) is enforced ATOMICALLY inside InsertWithQuotaAsync
+        // below -- the COUNT and the INSERT share one BEGIN IMMEDIATE transaction, so
+        // two concurrent create calls can't both pass the check before either
+        // commits (the earlier check-then-insert HERE was a TOCTOU race). A hit
+        // throws SubscriptionLimitException -> HTTP 429 (back-pressure lane,
+        // distinct from the 400 validation lane); no raw count is echoed (P30/P11).
 
         var pushMode = NormalisePushMode(req.PushMode);
 
@@ -211,7 +207,7 @@ public class SubscriptionService
             StreamChainId: streamChainId,
             StreamJobId: streamJobId
         );
-        await _subs.InsertAsync(sub);
+        await _subs.InsertWithQuotaAsync(sub, _maxActiveGlobal, _maxActivePerBuyer);
 
         // tick_echo and tick_stream_echo share per-subscription state: the
         // message echoed on every tick. Both flow through the same repository

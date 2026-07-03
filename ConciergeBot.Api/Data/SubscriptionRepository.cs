@@ -33,6 +33,61 @@ public class SubscriptionRepository
     {
         await using var conn = _db.OpenConnection();
         await using var cmd = conn.CreateCommand();
+        BindInsertCommand(cmd, s);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    // Audit (2026-07 #4): atomic quota-gated insert. The active-subscription
+    // count and the INSERT MUST run in one transaction, or two concurrent
+    // create-subscription calls can both pass the COUNT before either commits
+    // and blow past the cap (a TOCTOU the previous check-then-insert in
+    // SubscriptionService had). BEGIN IMMEDIATE (deferred:false) takes the write
+    // lock up front, so the COUNTs and the INSERT are serialized against every
+    // other writer on the DB (busy_timeout=5000 makes a contending writer WAIT,
+    // not fail). Enforced here -- where the check and the write share the txn --
+    // rather than in the service. 0/negative cap = unlimited (guarded per-cap).
+    // Throws SubscriptionLimitException (-> HTTP 429) on a hit; nothing is
+    // inserted (the throw disposes the uncommitted transaction = rollback).
+    public async Task InsertWithQuotaAsync(Subscription s, int maxActiveGlobal, int maxActivePerBuyer)
+    {
+        await using var conn = _db.OpenConnection();
+        await using var tx = conn.BeginTransaction(deferred: false);
+
+        if (maxActiveGlobal > 0)
+        {
+            await using var count = conn.CreateCommand();
+            count.Transaction = tx;
+            count.CommandText = "SELECT COUNT(*) FROM subscriptions WHERE status='active'";
+            if (Convert.ToInt32(await count.ExecuteScalarAsync()) >= maxActiveGlobal)
+                throw new SubscriptionLimitException("global active-subscription limit reached");
+        }
+        if (maxActivePerBuyer > 0 && !string.IsNullOrEmpty(s.BuyerAgent))
+        {
+            await using var count = conn.CreateCommand();
+            count.Transaction = tx;
+            // COLLATE NOCASE so a buyer can't bypass the per-buyer cap by varying
+            // address case (matches CountActiveByBuyerAsync + portfolio convention).
+            count.CommandText =
+                "SELECT COUNT(*) FROM subscriptions WHERE status='active' AND buyer_agent = $b COLLATE NOCASE";
+            count.Parameters.AddWithValue("$b", s.BuyerAgent);
+            if (Convert.ToInt32(await count.ExecuteScalarAsync()) >= maxActivePerBuyer)
+                throw new SubscriptionLimitException("per-buyer active-subscription limit reached");
+        }
+
+        await using (var ins = conn.CreateCommand())
+        {
+            ins.Transaction = tx;
+            BindInsertCommand(ins, s);
+            await ins.ExecuteNonQueryAsync();
+        }
+        await tx.CommitAsync();
+    }
+
+    // Shared INSERT binding for InsertAsync + InsertWithQuotaAsync so the column
+    // list and the cipher-wrapping of webhook_secret never diverge between the
+    // two write paths. Caller sets cmd.Transaction (if any) and executes.
+    private void BindInsertCommand(SqliteCommand cmd, Subscription s)
+    {
         cmd.CommandText = @"
             INSERT INTO subscriptions
                 (id, job_id, buyer_agent, offering_name, requirement_json,
@@ -70,14 +125,14 @@ public class SubscriptionRepository
         cmd.Parameters.AddWithValue("$pm", s.PushMode);
         cmd.Parameters.AddWithValue("$sci", (object?)s.StreamChainId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$sji", (object?)s.StreamJobId ?? DBNull.Value);
-        await cmd.ExecuteNonQueryAsync();
     }
 
     // Audit (2026-05-30 #M3 / P60): active-subscription quota inputs. Each active
     // row is re-selected every 10s poll + fans out compute + an outbound webhook
     // POST, so unbounded creation linearly grows standing worker CPU + outbound
-    // HTTP + DB rows on a single-instance / shared-droplet model. CreateAsync gates
-    // on these BEFORE insert. Cheap COUNTs (ix on status already exists).
+    // HTTP + DB rows on a single-instance / shared-droplet model. Authoritative
+    // enforcement is now atomic in InsertWithQuotaAsync (2026-07 #4); these
+    // standalone COUNTs stay as cheap read helpers (ix on status already exists).
     public async Task<int> CountActiveAsync()
     {
         await using var conn = _db.OpenConnection();

@@ -37,7 +37,7 @@ public class BackupWorker : BackgroundService
             _logger.LogInformation("[backup] disabled via config (Backup:Enabled=false)");
             return;
         }
-        try { Directory.CreateDirectory(_backupDir); }
+        try { EnsureBackupDir(); }
         catch (Exception ex)
         {
             _logger.LogError(ex, "[backup] cannot create backup directory {Dir} — disabling worker", _backupDir);
@@ -88,6 +88,9 @@ public class BackupWorker : BackgroundService
 
         if (File.Exists(finalPath)) File.Delete(finalPath);
         File.Move(tmpPath, finalPath);
+        // 2026-07 audit #5: owner-only (0600) on each snapshot, defence in depth on top
+        // of the 0700 directory. No-op on Windows.
+        HardenUnixPermissions(finalPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
 
         var size = new FileInfo(finalPath).Length;
         _logger.LogInformation(
@@ -96,6 +99,26 @@ public class BackupWorker : BackgroundService
 
         PruneOldBackups();
         return finalPath;
+    }
+
+    // 2026-07 audit #5: create the backup directory and lock it to owner-only (0700). A
+    // snapshot is a full copy of the live DB (buyer metadata, webhook URLs, and, when the
+    // secret cipher is off, webhook secrets), so a co-located lower-priv user must not be
+    // able to enumerate/read it. No-op perms on Windows (dev); enforced on the Linux droplet.
+    private void EnsureBackupDir()
+    {
+        Directory.CreateDirectory(_backupDir);
+        HardenUnixPermissions(_backupDir,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+
+    // chmod the path to owner-only. No-op on Windows (File.SetUnixFileMode throws
+    // PlatformNotSupportedException there); best-effort on Unix. Works on files + dirs.
+    private void HardenUnixPermissions(string path, UnixFileMode mode)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try { File.SetUnixFileMode(path, mode); }
+        catch (Exception ex) { _logger.LogWarning(ex, "[backup] could not harden permissions on {Path}", path); }
     }
 
     private void PruneOldBackups()

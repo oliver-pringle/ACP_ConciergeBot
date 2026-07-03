@@ -253,6 +253,25 @@ if (!app.Environment.IsDevelopment())
 // configured above so this is a no-op when the bot runs without a proxy.
 app.UseForwardedHeaders();
 
+// 2026-07 audit #3: conscious-posture warning when the X-Forwarded-For trust set still
+// includes the broad docker-bridge default 172.16.0.0/12 (any container that can reach
+// this API on that range could spoof the rate-limit client IP). Not fail-fast - a broad
+// proxy default only degrades rate-limit attribution, and failing the boot would break
+// zero-config clones. Tighten TRUSTED_PROXY_NETWORKS to the exact reverse-proxy subnet.
+if (!app.Environment.IsDevelopment())
+{
+    var auditTrustedProxyRaw = builder.Configuration["TRUSTED_PROXY_NETWORKS"]
+        ?? Environment.GetEnvironmentVariable("TRUSTED_PROXY_NETWORKS")
+        ?? "172.16.0.0/12,127.0.0.0/8,::1/128";
+    if (auditTrustedProxyRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                            .Any(cidr => cidr.Equals("172.16.0.0/12", StringComparison.OrdinalIgnoreCase)))
+        app.Logger.LogWarning(
+            "TRUSTED_PROXY_NETWORKS trusts the broad docker-bridge range 172.16.0.0/12 for " +
+            "X-Forwarded-For. Any container reaching this API on that range can spoof the " +
+            "rate-limit client IP. In production, set TRUSTED_PROXY_NETWORKS to the exact " +
+            "reverse-proxy subnet (e.g. 172.23.0.0/24) to tighten this.");
+}
+
 // Per-IP + per-X-API-Key sliding-window rate limit on heavy / write endpoints
 // (audit F9). Placed BEFORE auth so unauthenticated floods are also throttled.
 // Tunable via RateLimit:HeavyEndpointCapPerIp + RateLimit:HeavyEndpointCapPerApiKey.

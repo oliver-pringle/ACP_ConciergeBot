@@ -14,4 +14,9 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
   </ItemGroup>
 
+  <!-- Security: override vulnerable transitives (2026-07 audit #7). GHSA-v5pm-xwqc-g5wc (Microsoft.OpenApi) + GHSA-2m69-gcr7-jv3q (SQLitePCLRaw native SQLite). Pins the transitive only; pinned-stack packages unchanged. See ACP_BasicSubscriptionBot csproj for full rationale. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.50.3" />
+  </ItemGroup>
 </Project>
