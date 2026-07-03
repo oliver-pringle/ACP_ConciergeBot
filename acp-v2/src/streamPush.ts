@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { Buffer } from "node:buffer";
 import type { AcpAgent } from "@virtuals-protocol/acp-node-v2";
+import { withApprovalNudgeJson } from "./approvalNudge.js";
 
 // Internal HTTP server for the inJobStream PushMode. The C# tier
 // (InJobStreamDeliveryService) POSTs each tick payload here, and this server
@@ -244,7 +245,7 @@ async function handle(
       return;
     }
     try {
-      await session.submit(body.finalPayloadJson!);
+      await session.submit(await withApprovalNudgeJson(session, body.finalPayloadJson!));
       writeJson(res, 200, { ok: true, subscriptionId: body.subscriptionId });
     } catch (sdkErr) {
       const message = sdkErr instanceof Error ? sdkErr.message : String(sdkErr);

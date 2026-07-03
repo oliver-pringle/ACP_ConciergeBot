@@ -6,6 +6,7 @@ import { createApiClient } from "./apiClient.js";
 import { route } from "./router.js";
 import { priceForAssetToken } from "./pricing.js";
 import { toDeliverable } from "./deliverable.js";
+import { withApprovalNudge } from "./approvalNudge.js";
 import { listOfferings, getOffering } from "./offerings/registry.js";
 import { listResources } from "./resources.js";
 import { ensureDelegation } from "./walletDelegation.js";
@@ -177,14 +178,14 @@ async function main() {
       }
 
       // webhook path (default): submit the receipt and end the job.
-      const payload = await toDeliverable(session.jobId, {
+      const payload = await toDeliverable(session.jobId, await withApprovalNudge(session, {
         subscriptionId: receipt.subscriptionId,
         webhookSecret: receipt.webhookSecret,
         ticksPurchased: receipt.ticksPurchased,
         intervalSeconds: receipt.intervalSeconds,
         expiresAt: receipt.expiresAt,
         signatureScheme: "HMAC-SHA256(secret, subscriptionId + '.' + tick + '.' + timestamp + '.' + body)"
-      });
+      }));
       await session.submit(payload);
       console.log(`[seller] submitted subscription receipt jobId=${session.jobId} subId=${receipt.subscriptionId}`);
       return;
@@ -193,7 +194,7 @@ async function main() {
     // One-shot path
     const outcome = await route(stash.offeringName, stash.requirement, { client });
     if (!outcome.ok) { await session.sendMessage(`execution failed: ${outcome.reason}`); return; }
-    const payload = await toDeliverable(session.jobId, outcome.result);
+    const payload = await toDeliverable(session.jobId, await withApprovalNudge(session, outcome.result));
     await session.submit(payload);
     console.log(`[seller] submitted one-shot jobId=${session.jobId} offering=${stash.offeringName}`);
   }
