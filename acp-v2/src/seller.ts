@@ -12,6 +12,7 @@ import { listResources } from "./resources.js";
 import { ensureDelegation } from "./walletDelegation.js";
 import { getChain } from "./chain.js";
 import { startStreamPushServer } from "./streamPush.js";
+import { startLivenessRecycle } from "./liveness.js";
 
 type PendingJob = {
   offeringName: string;
@@ -47,7 +48,12 @@ async function main() {
 
   const pending = new Map<string, PendingJob>();
 
+  // Deafness guard (R29): planned self-recycle after SIDECAR_RECYCLE_HOURS
+  // (default 24h) + jitter, deferred while a job is active. See liveness.ts.
+  const liveness = startLivenessRecycle();
+
   agent.on("entry", async (session: JobSession, entry: JobRoomEntry) => {
+    liveness.noteActivity();
     try {
       if (entry.kind === "system") {
         switch (entry.event.type) {
